@@ -26,6 +26,9 @@ body{padding-top:env(safe-area-inset-top)}
 #map{flex:1;z-index:1}
 
 .sb{width:430px;flex-shrink:0;display:flex;flex-direction:column;background:var(--cream);border-right:1px solid var(--cream-dark);z-index:2;overflow:hidden;box-shadow:4px 0 24px rgba(0,0,0,.06)}
+.sb-body{flex:1;overflow-y:auto;-webkit-overflow-scrolling:touch}
+.sb-body::-webkit-scrollbar{width:5px}
+.sb-body::-webkit-scrollbar-thumb{background:var(--cream-dark);border-radius:3px}
 .sb-hdr{background:linear-gradient(135deg,var(--navy-deep),var(--navy) 60%,var(--navy-mid));color:var(--cream);padding:14px 18px 10px;flex-shrink:0}
 .sb-hdr h1{font-family:'Cormorant Garamond',serif;font-weight:700;font-size:1.25rem}
 .sb-hdr h1 span{color:var(--gold-light);font-style:italic}
@@ -45,6 +48,17 @@ body{padding-top:env(safe-area-inset-top)}
 .pt-custom{font-size:.7rem;color:var(--tl);padding:2px 0 0 22px;display:none}
 .pt-custom.vis{display:block}
 .pt-custom em{color:var(--navy);font-style:normal;font-weight:600}
+.pt-input-wrap{position:relative;flex:1}
+.pt-input{width:100%;font-family:'Nunito Sans',sans-serif;font-size:.78rem;padding:7px 10px;border-radius:8px;border:1.5px solid var(--cream-dark);background:var(--white);color:var(--text)}
+.pt-input:focus{outline:none;border-color:var(--navy)}
+.pt-input::placeholder{color:var(--tl);font-size:.72rem}
+.pt-results{position:absolute;top:100%;left:0;right:0;background:var(--white);border:1.5px solid var(--cream-dark);border-top:none;border-radius:0 0 8px 8px;max-height:150px;overflow-y:auto;z-index:100;display:none}
+.pt-results.vis{display:block}
+.pt-result-item{padding:6px 10px;font-size:.72rem;cursor:pointer;border-bottom:1px solid var(--cream-dark)}
+.pt-result-item:last-child{border-bottom:none}
+.pt-result-item:hover{background:var(--cream)}
+.pt-mode-toggle{font-size:.6rem;color:var(--tl);cursor:pointer;text-decoration:underline;padding:3px 0 0 22px}
+.pt-mode-toggle:hover{color:var(--navy)}
 
 /* DAY SEL */
 .sel{display:flex;padding:8px 12px;gap:6px;flex-shrink:0;background:var(--cream);border-bottom:1px solid var(--cream-dark)}
@@ -123,19 +137,38 @@ body{padding-top:env(safe-area-inset-top)}
       <h1>Планировщик <span>маршрутов</span></h1>
     </div>
 
+    <div class="sb-body">
     <!-- START / END -->
     <div class="pts">
-      <div class="pt-row">
+      <div class="pt-row" id="startRowSelect">
         <div class="pt-dot start"></div>
         <select class="pt-select" id="startSel" onchange="onSelectPoint('start')"></select>
         <button class="pt-map-btn" id="startMapBtn" onclick="enterMapPick('start')">&#x1f4cd; Карта</button>
       </div>
+      <div class="pt-row" id="startRowInput" style="display:none">
+        <div class="pt-dot start"></div>
+        <div class="pt-input-wrap">
+          <input class="pt-input" id="startInput" type="text" placeholder="Введите адрес..." oninput="onAddressInput('start')" />
+          <div class="pt-results" id="startResults"></div>
+        </div>
+        <button class="pt-map-btn" id="startMapBtn2" onclick="enterMapPick('start')">&#x1f4cd;</button>
+      </div>
+      <div class="pt-mode-toggle" onclick="toggleInputMode('start')">&#x270E; Ввести адрес</div>
       <div class="pt-custom" id="startCustom"></div>
-      <div class="pt-row">
+      <div class="pt-row" id="endRowSelect">
         <div class="pt-dot end"></div>
         <select class="pt-select" id="endSel" onchange="onSelectPoint('end')"></select>
         <button class="pt-map-btn" id="endMapBtn" onclick="enterMapPick('end')">&#x1f4cd; Карта</button>
       </div>
+      <div class="pt-row" id="endRowInput" style="display:none">
+        <div class="pt-dot end"></div>
+        <div class="pt-input-wrap">
+          <input class="pt-input" id="endInput" type="text" placeholder="Введите адрес..." oninput="onAddressInput('end')" />
+          <div class="pt-results" id="endResults"></div>
+        </div>
+        <button class="pt-map-btn" id="endMapBtn2" onclick="enterMapPick('end')">&#x1f4cd;</button>
+      </div>
+      <div class="pt-mode-toggle" onclick="toggleInputMode('end')">&#x270E; Ввести адрес</div>
       <div class="pt-custom" id="endCustom"></div>
     </div>
 
@@ -145,6 +178,7 @@ body{padding-top:env(safe-area-inset-top)}
     </div>
     <div class="stats" id="stats"></div>
     <div id="panel"></div>
+    </div><!-- /sb-body -->
   </div>
   <div id="map"></div>
 </div>
@@ -229,8 +263,93 @@ function exitMapPick(){
   document.getElementById('mapHint').style.display='none';
   document.getElementById('startMapBtn').classList.remove('active');
   document.getElementById('endMapBtn').classList.remove('active');
+  document.getElementById('startMapBtn2').classList.remove('active');
+  document.getElementById('endMapBtn2').classList.remove('active');
   map.getContainer().style.cursor='';
 }
+
+// ═══════════════════════════════════════════
+// ADDRESS INPUT (Nominatim geocoding)
+// ═══════════════════════════════════════════
+const inputMode={start:false,end:false};
+let searchTimeout=null;
+
+function toggleInputMode(which){
+  inputMode[which]=!inputMode[which];
+  const selRow=document.getElementById(which+'RowSelect');
+  const inpRow=document.getElementById(which+'RowInput');
+  const toggle=selRow.nextElementSibling.tagName==='DIV'?selRow.parentElement.querySelectorAll('.pt-mode-toggle'):[]; // fallback
+  if(inputMode[which]){
+    selRow.style.display='none';
+    inpRow.style.display='flex';
+    // update toggle text — find the correct one
+    updateToggleText(which);
+  } else {
+    selRow.style.display='flex';
+    inpRow.style.display='none';
+    document.getElementById(which+'Results').classList.remove('vis');
+    updateToggleText(which);
+  }
+}
+
+function updateToggleText(which){
+  const toggles=document.querySelectorAll('.pt-mode-toggle');
+  const idx=which==='start'?0:1;
+  if(toggles[idx]){
+    toggles[idx].innerHTML=inputMode[which]?'&#x25C0; Из списка':'&#x270E; Ввести адрес';
+  }
+}
+
+function onAddressInput(which){
+  clearTimeout(searchTimeout);
+  const val=document.getElementById(which+'Input').value.trim();
+  const resultsEl=document.getElementById(which+'Results');
+  if(val.length<3){resultsEl.classList.remove('vis');return;}
+  searchTimeout=setTimeout(()=>searchAddress(which,val),400);
+}
+
+function searchAddress(which,query){
+  const resultsEl=document.getElementById(which+'Results');
+  const url='https://nominatim.openstreetmap.org/search?format=json&limit=5&countrycodes=ru&viewbox=29.4,60.2,30.8,59.7&bounded=1&q='+encodeURIComponent(query);
+  fetch(url)
+    .then(r=>r.json())
+    .then(data=>{
+      if(!data.length){
+        resultsEl.innerHTML='<div class="pt-result-item" style="color:var(--tl)">Ничего не найдено</div>';
+        resultsEl.classList.add('vis');
+        return;
+      }
+      resultsEl.innerHTML=data.map((d,i)=>
+        `<div class="pt-result-item" onclick="selectAddress('${which}',${d.lat},${d.lon},${i})" data-idx="${i}">${d.display_name.split(',').slice(0,3).join(',')}</div>`
+      ).join('');
+      resultsEl._data=data;
+      resultsEl.classList.add('vis');
+    })
+    .catch(()=>{});
+}
+
+function selectAddress(which,lat,lon,idx){
+  const resultsEl=document.getElementById(which+'Results');
+  const name=resultsEl.querySelector(`[data-idx="${idx}"]`).textContent;
+  const pt={id:'__custom__',name:name,lat:parseFloat(lat),lng:parseFloat(lon)};
+  if(which==='start'){
+    startPt=pt;
+    document.getElementById('startInput').value=name;
+  } else {
+    endPt=pt;
+    document.getElementById('endInput').value=name;
+  }
+  resultsEl.classList.remove('vis');
+  rebuild();
+}
+
+// Close results on outside click
+document.addEventListener('click',function(e){
+  if(!e.target.closest('.pt-input-wrap')){
+    document.getElementById('startResults').classList.remove('vis');
+    document.getElementById('endResults').classList.remove('vis');
+  }
+});
 
 // ═══════════════════════════════════════════
 // POI DATA

@@ -1,0 +1,491 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Планировщик маршрутов — Санкт-Петербург</title>
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css"/>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
+<link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,500;0,600;0,700;1,400&family=Nunito+Sans:wght@300;400;600;700&display=swap" rel="stylesheet">
+<style>
+*,*::before,*::after{margin:0;padding:0;box-sizing:border-box}
+:root{
+  --gold:#C6A55C;--gold-light:#E8D5A3;--gold-dim:#8B7340;
+  --navy:#1B2A4A;--navy-deep:#0F1A30;--navy-mid:#253A5E;
+  --cream:#F5F0E8;--cream-dark:#E8DFD0;
+  --white:#FAFAF7;--text:#2C2C2C;--tl:#6B6B6B;
+  --mp:#8B52A0;--mr:#D32F2F;--mb:#1565C0;
+  --train:#2E7D32;--walk:#FF8F00;--water:#0288D1;
+  --roof:#E65100;--radius:12px;
+  --start-color:#43A047;--end-color:#E53935;
+}
+html,body{height:100%;font-family:'Nunito Sans',sans-serif;color:var(--text)}
+.app{display:flex;height:100vh;overflow:hidden}
+#map{flex:1;z-index:1}
+
+.sb{width:430px;flex-shrink:0;display:flex;flex-direction:column;background:var(--cream);border-right:1px solid var(--cream-dark);z-index:2;overflow:hidden;box-shadow:4px 0 24px rgba(0,0,0,.06)}
+.sb-hdr{background:linear-gradient(135deg,var(--navy-deep),var(--navy) 60%,var(--navy-mid));color:var(--cream);padding:14px 18px 10px;flex-shrink:0}
+.sb-hdr h1{font-family:'Cormorant Garamond',serif;font-weight:700;font-size:1.25rem}
+.sb-hdr h1 span{color:var(--gold-light);font-style:italic}
+
+/* POINTS */
+.pts{padding:10px 14px;flex-shrink:0;border-bottom:1px solid var(--cream-dark);background:var(--white)}
+.pt-row{display:flex;gap:8px;align-items:center;margin-bottom:6px}
+.pt-row:last-child{margin-bottom:0}
+.pt-dot{width:14px;height:14px;border-radius:50%;flex-shrink:0;border:2px solid}
+.pt-dot.start{background:var(--start-color);border-color:#2E7D32}
+.pt-dot.end{background:var(--end-color);border-color:#C62828}
+.pt-select{flex:1;font-family:'Nunito Sans',sans-serif;font-size:.78rem;padding:7px 10px;border-radius:8px;border:1.5px solid var(--cream-dark);background:var(--white);color:var(--text);cursor:pointer;appearance:none;-webkit-appearance:none;background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 12 12'%3E%3Cpath d='M3 5l3 3 3-3' fill='none' stroke='%236B6B6B' stroke-width='1.5'/%3E%3C/svg%3E");background-repeat:no-repeat;background-position:right 10px center}
+.pt-select:focus{outline:none;border-color:var(--navy)}
+.pt-map-btn{font-size:.65rem;font-weight:700;padding:5px 10px;border-radius:20px;border:1.5px solid var(--cream-dark);background:var(--white);color:var(--tl);cursor:pointer;white-space:nowrap;transition:all .2s}
+.pt-map-btn:hover{border-color:var(--navy);color:var(--navy)}
+.pt-map-btn.active{background:var(--navy);color:var(--gold-light);border-color:var(--navy)}
+.pt-custom{font-size:.7rem;color:var(--tl);padding:2px 0 0 22px;display:none}
+.pt-custom.vis{display:block}
+.pt-custom em{color:var(--navy);font-style:normal;font-weight:600}
+
+/* DAY SEL */
+.sel{display:flex;padding:8px 12px;gap:6px;flex-shrink:0;background:var(--cream);border-bottom:1px solid var(--cream-dark)}
+.sel button{flex:1;font-family:'Cormorant Garamond',serif;font-weight:600;font-size:.88rem;padding:7px 6px;border-radius:60px;border:1.5px solid var(--cream-dark);cursor:pointer;background:var(--white);color:var(--tl);transition:all .3s;white-space:nowrap;text-align:center}
+.sel button.on{background:var(--navy);color:var(--gold-light);border-color:var(--navy);box-shadow:0 2px 10px rgba(27,42,74,.2)}
+
+/* STATS */
+.stats{display:flex;flex-shrink:0;border-bottom:1px solid var(--cream-dark)}
+.stats div{flex:1;text-align:center;padding:7px 4px;background:var(--white);border-right:1px solid var(--cream-dark)}
+.stats div:last-child{border-right:none}
+.stats .v{font-family:'Cormorant Garamond',serif;font-weight:700;font-size:.95rem;color:var(--navy)}
+.stats .l{font-size:.58rem;color:var(--tl);text-transform:uppercase;letter-spacing:.05em;margin-top:1px}
+
+.sec-label{padding:8px 14px 3px;flex-shrink:0;font-size:.66rem;font-weight:700;text-transform:uppercase;letter-spacing:.07em;color:var(--tl)}
+
+.scroll{flex:1;overflow-y:auto;padding:4px 12px 16px}
+.scroll::-webkit-scrollbar{width:5px}
+.scroll::-webkit-scrollbar-thumb{background:var(--cream-dark);border-radius:3px}
+
+/* POI */
+.poi{display:flex;gap:8px;align-items:flex-start;background:var(--white);border-radius:10px;padding:9px 11px;margin-bottom:5px;border:1px solid var(--cream-dark);transition:all .2s;cursor:pointer;user-select:none}
+.poi:hover{box-shadow:0 2px 10px rgba(0,0,0,.06)}
+.poi.off{opacity:.4}
+.poi.off .pn{text-decoration:line-through}
+.poi.required{border-left:3px solid var(--gold)}
+.poi .tog{width:34px;height:20px;border-radius:11px;background:var(--cream-dark);position:relative;flex-shrink:0;margin-top:2px;transition:background .2s}
+.poi .tog::after{content:'';position:absolute;top:2px;left:2px;width:16px;height:16px;border-radius:50%;background:#fff;box-shadow:0 1px 3px rgba(0,0,0,.2);transition:transform .2s}
+.poi.on .tog{background:var(--navy)}
+.poi.on .tog::after{transform:translateX(14px)}
+.poi.required .tog{background:var(--gold);cursor:default}
+.poi.required .tog::after{transform:translateX(14px)}
+.poi-i{flex:1;min-width:0}
+.poi-i .pn{font-family:'Cormorant Garamond',serif;font-weight:700;font-size:.88rem;color:var(--navy);line-height:1.2}
+.poi-i .pd{font-size:.7rem;color:var(--tl);margin-top:2px;line-height:1.35}
+.poi-i .pd strong{color:var(--text);font-weight:600}
+.poi-tags{display:flex;gap:4px;margin-top:4px;flex-wrap:wrap}
+.tag{font-size:.54rem;font-weight:700;text-transform:uppercase;letter-spacing:.04em;padding:2px 6px;border-radius:12px}
+.tag.water{background:rgba(2,136,209,.1);color:var(--water)}
+.tag.time{background:rgba(198,165,92,.1);color:var(--gold-dim)}
+.tag.req{background:rgba(198,165,92,.15);color:var(--gold-dim)}
+
+.legend{display:flex;flex-wrap:wrap;gap:7px;justify-content:center;padding:7px 10px;border-top:1px solid var(--cream-dark);background:var(--white);flex-shrink:0;font-size:.65rem;color:var(--tl)}
+.leg{display:flex;align-items:center;gap:3px}
+.lsw{width:12px;height:3px;border-radius:2px}
+
+.leaflet-popup-content-wrapper{border-radius:10px!important;font-family:'Nunito Sans',sans-serif}
+.leaflet-popup-content{margin:10px 12px!important;font-size:.78rem;line-height:1.5}
+.pt-title{font-family:'Cormorant Garamond',serif;font-weight:700;font-size:.92rem;color:var(--navy);margin-bottom:3px}
+.pb{display:inline-block;font-size:.55rem;font-weight:700;text-transform:uppercase;letter-spacing:.05em;padding:2px 7px;border-radius:12px;color:#fff;margin-bottom:4px}
+
+/* map pick hint */
+.map-hint{
+  position:fixed;top:16px;left:50%;transform:translateX(-50%);z-index:9999;
+  background:var(--navy);color:var(--gold-light);padding:10px 22px;border-radius:60px;
+  font-size:.82rem;font-weight:600;box-shadow:0 4px 20px rgba(0,0,0,.3);
+  display:none;pointer-events:none;animation:pulse 1.5s ease infinite;
+}
+@keyframes pulse{0%,100%{opacity:1}50%{opacity:.7}}
+
+@media(max-width:800px){
+  .app{flex-direction:column-reverse}
+  .sb{width:100%;height:56vh;position:fixed;bottom:0;left:0;right:0;z-index:1000;border-right:none;border-top:2px solid var(--cream-dark);transition:transform .35s ease;border-radius:16px 16px 0 0}
+  .sb.collapsed{transform:translateY(calc(100% - 48px))}
+  .sb-hdr{padding:10px 14px 8px;border-radius:16px 16px 0 0}
+  #map{height:100vh}
+  .pull{display:block;width:36px;height:4px;background:var(--cream-dark);border-radius:2px;margin:0 auto 6px;cursor:pointer}
+}
+@media(min-width:801px){.pull{display:none}}
+</style>
+</head>
+<body>
+<div class="app">
+  <div class="sb" id="sb">
+    <div class="pull" onclick="document.getElementById('sb').classList.toggle('collapsed')"></div>
+    <div class="sb-hdr">
+      <h1>Планировщик <span>маршрутов</span></h1>
+    </div>
+
+    <!-- START / END -->
+    <div class="pts">
+      <div class="pt-row">
+        <div class="pt-dot start"></div>
+        <select class="pt-select" id="startSel" onchange="onSelectPoint('start')"></select>
+        <button class="pt-map-btn" id="startMapBtn" onclick="enterMapPick('start')">📍 Карта</button>
+      </div>
+      <div class="pt-custom" id="startCustom"></div>
+      <div class="pt-row">
+        <div class="pt-dot end"></div>
+        <select class="pt-select" id="endSel" onchange="onSelectPoint('end')"></select>
+        <button class="pt-map-btn" id="endMapBtn" onclick="enterMapPick('end')">📍 Карта</button>
+      </div>
+      <div class="pt-custom" id="endCustom"></div>
+    </div>
+
+    <div class="sel">
+      <button class="on" onclick="switchDay(0)">День 1 · Ораниенбаум</button>
+      <button onclick="switchDay(1)">День 2 · Центр</button>
+    </div>
+    <div class="stats" id="stats"></div>
+    <div id="panel"></div>
+  </div>
+  <div id="map"></div>
+</div>
+<div class="map-hint" id="mapHint">Кликни по карте, чтобы выбрать точку</div>
+
+<script>
+// ═══════════════════════════════════════════
+// PRESETS
+// ═══════════════════════════════════════════
+const PRESETS=[
+  {id:'manchest',name:'Ул. Манчестерская 3, к2',lat:59.8615,lng:30.3782,metro:'м. Международная'},
+  {id:'mezhd',name:'м. Международная',lat:59.8700,lng:30.3800,metro:null},
+  {id:'moskov',name:'Московский вокзал',lat:59.9293,lng:30.3618,metro:'м. Пл. Восстания'},
+  {id:'finl',name:'Финляндский вокзал',lat:59.9560,lng:30.3553,metro:'м. Пл. Ленина'},
+  {id:'balt',name:'Балтийский вокзал',lat:59.9068,lng:30.2990,metro:'м. Балтийская'},
+  {id:'ladozh',name:'Ладожский вокзал',lat:59.9322,lng:30.4400,metro:'м. Ладожская'},
+  {id:'nevsky',name:'Невский пр. / м. Невский пр.',lat:59.9352,lng:30.3272,metro:null},
+  {id:'admiralt',name:'м. Адмиралтейская',lat:59.9362,lng:30.3148,metro:null},
+  {id:'sennaya',name:'м. Сенная площадь',lat:59.9267,lng:30.3198,metro:null},
+  {id:'vasileostr',name:'м. Василеостровская',lat:59.9428,lng:30.2780,metro:null},
+  {id:'petrogr',name:'м. Петроградская',lat:59.9663,lng:30.3115,metro:null},
+  {id:'pulkovo',name:'Аэропорт Пулково',lat:59.8003,lng:30.2625,metro:null},
+];
+
+let startPt={...PRESETS[0]};
+let endPt={...PRESETS[0]};
+let mapPickMode=null; // 'start' | 'end' | null
+let curDay=0;
+
+function fillSelects(){
+  ['startSel','endSel'].forEach(id=>{
+    const sel=document.getElementById(id);
+    sel.innerHTML='';
+    PRESETS.forEach(p=>{
+      const o=document.createElement('option');
+      o.value=p.id;o.textContent=p.name;
+      sel.appendChild(o);
+    });
+    const custom=document.createElement('option');
+    custom.value='__custom__';custom.textContent='— Точка на карте —';custom.disabled=true;
+    sel.appendChild(custom);
+  });
+}
+
+function onSelectPoint(which){
+  const sel=document.getElementById(which==='start'?'startSel':'endSel');
+  const p=PRESETS.find(x=>x.id===sel.value);
+  if(!p)return;
+  if(which==='start'){
+    startPt={...p};
+    document.getElementById('startCustom').classList.remove('vis');
+  } else {
+    endPt={...p};
+    document.getElementById('endCustom').classList.remove('vis');
+  }
+  rebuild();
+}
+
+function enterMapPick(which){
+  mapPickMode=which;
+  document.getElementById('mapHint').style.display='block';
+  document.getElementById('mapHint').textContent=
+    which==='start'?'Кликни по карте — стартовая точка':'Кликни по карте — конечная точка';
+  document.getElementById(which+'MapBtn').classList.add('active');
+  map.getContainer().style.cursor='crosshair';
+}
+
+function exitMapPick(){
+  mapPickMode=null;
+  document.getElementById('mapHint').style.display='none';
+  document.getElementById('startMapBtn').classList.remove('active');
+  document.getElementById('endMapBtn').classList.remove('active');
+  map.getContainer().style.cursor='';
+}
+
+// ═══════════════════════════════════════════
+// POI DATA
+// ═══════════════════════════════════════════
+const DAYS=[
+  {
+    title:'День 1 · Ораниенбаум',
+    transitType:'train', // affects route lines from start to first POI cluster
+    pois:[
+      {id:'d1_strelna',order:1,name:'Стрельна — берег Финского залива',
+       lat:59.8562,lng:30.0555,water:true,on:false,required:false,
+       desc:'Константиновский дворец (снаружи), <strong>береговая линия залива</strong>.',time:'~1 ч'},
+      {id:'d1_peterhof',order:2,name:'Петергоф — фонтаны Нижнего парка',
+       lat:59.8862,lng:29.9086,water:true,on:false,required:false,
+       desc:'<strong>Большой каскад</strong>, Самсон, вид на залив. Ст. Новый Петергоф + авт.',time:'2–3 ч'},
+      {id:'d1_oranienbaum',order:3,name:'Ансамбль Ораниенбаум · Верхний парк',
+       lat:59.9155,lng:29.7508,water:false,on:true,required:true,
+       desc:'Меншиковский дворец, Китайский дворец, Катальная горка, Нижний сад.',time:'3–4 ч'},
+      {id:'d1_naberezh',order:4,name:'Набережная Финского залива (Ломоносов)',
+       lat:59.9080,lng:29.7700,water:true,on:false,required:false,
+       desc:'Прогулка по <strong>берегу</strong> с видом на Кронштадт и форты.',time:'~30 мин'},
+      {id:'d1_lunch',order:5,name:'Обед в Ломоносове',
+       lat:59.9140,lng:29.7630,water:false,on:true,required:false,
+       desc:'Кафе на Дворцовом пр. или Еленинской ул.',time:'~1 ч'}
+    ]
+  },
+  {
+    title:'День 2 · Центр',
+    transitType:'metro',
+    pois:[
+      {id:'d2_isaak',order:1,name:'Исаакиевский собор',
+       lat:59.9340,lng:30.3063,water:false,on:true,required:false,
+       desc:'<strong>Колоннада</strong> — панорама 360°. Мозаики, малахит, лазурит.',time:'1–1.5 ч'},
+      {id:'d2_medny',order:2,name:'Медный всадник · Сенатская пл.',
+       lat:59.9363,lng:30.3022,water:false,on:true,required:false,
+       desc:'Памятник Петру I, вид на Неву.',time:'~20 мин'},
+      {id:'d2_admnab',order:3,name:'Адмиралтейская набережная',
+       lat:59.9375,lng:30.3095,water:true,on:false,required:false,
+       desc:'Прогулка <strong>вдоль Невы</strong>, фонтаны, вид на Кунсткамеру.',time:'~20 мин'},
+      {id:'d2_dvorets',order:4,name:'Дворцовая площадь',
+       lat:59.9390,lng:30.3150,water:false,on:true,required:false,
+       desc:'Александровская колонна, арка Главного штаба, Зимний.',time:'~15 мин'},
+      {id:'d2_ermitazh',order:5,name:'Эрмитаж',
+       lat:59.9410,lng:30.3135,water:false,on:true,required:false,
+       desc:'Билет онлайн заранее. Минимум 2 часа.',time:'1.5–3 ч'},
+      {id:'d2_letniy',order:6,name:'Летний сад',
+       lat:59.9450,lng:30.3350,water:true,on:false,required:false,
+       desc:'Старейший парк <strong>на берегу Невы</strong>. Скульптуры, фонтаны, решётка Фельтена.',time:'~40 мин'},
+      {id:'d2_strelka',order:7,name:'Стрелка Васильевского острова',
+       lat:59.9443,lng:30.3060,water:true,on:true,required:false,
+       desc:'Ростральные колонны, <strong>спуск к воде</strong>. Лучшее фото с Невой.',time:'~15 мин'},
+      {id:'d2_peter',order:8,name:'Петропавловская крепость',
+       lat:59.9500,lng:30.3165,water:true,on:true,required:false,
+       desc:'Собор, <strong>пляж</strong> с видом на Эрмитаж. Полуденный выстрел 12:00.',time:'1–1.5 ч'},
+      {id:'d2_aurora',order:9,name:'Набережная у крейсера «Аврора»',
+       lat:59.9555,lng:30.3380,water:true,on:false,required:false,
+       desc:'Прогулка <strong>вдоль Большой Невки</strong>. Крейсер, Нахимовское.',time:'~25 мин'},
+      {id:'d2_lunch',order:10,name:'Обед на Петроградской',
+       lat:59.9530,lng:30.3130,water:false,on:true,required:false,
+       desc:'Каменноостровский пр. или Большая Посадская.',time:'~1 ч'}
+    ]
+  }
+];
+
+// ROOFS
+const ROOFS=[
+  {lat:59.9213,lng:30.3490,name:'Крыша «Этажи»',price:'~200 ₽',cat:'free'},
+  {lat:59.9267,lng:30.3150,name:'Бертгольд Центр',price:'Бесплатно',cat:'free'},
+  {lat:59.9340,lng:30.3065,name:'Колоннада Исаакия',price:'~300 ₽',cat:'paid'},
+  {lat:59.9487,lng:30.3955,name:'Звонница Смольного',price:'~200 ₽',cat:'paid'},
+  {lat:59.9360,lng:30.3254,name:'Думская башня',price:'Платно',cat:'paid'},
+  {lat:59.9368,lng:30.3250,name:'Дом Зингера',price:'Экскурсия',cat:'paid'},
+  {lat:59.9345,lng:30.3240,name:'Казанский собор',price:'Платно',cat:'paid'},
+  {lat:59.9502,lng:30.3155,name:'Невская панорама',price:'~350 ₽',cat:'paid'},
+  {lat:59.9320,lng:30.3610,name:'Невский Руф',price:'от 700 ₽',cat:'exc'},
+  {lat:59.9275,lng:30.3420,name:'PanoramicRoof',price:'от 1 000 ₽',cat:'exc'},
+  {lat:59.9870,lng:30.1777,name:'Лахта Центр',price:'~2 300 ₽',cat:'prem'},
+  {lat:59.8510,lng:30.3237,name:'Leader Tower',price:'Бесплатно (гостям)',cat:'prem'},
+  {lat:59.9548,lng:30.3362,name:'Арт-центр Сергиенко',price:'Бесплатно',cat:'free'},
+  {lat:59.9220,lng:30.2960,name:'Новая Мариинка',price:'По билету',cat:'paid'},
+];
+
+const LINE_COLORS={walk:'#FF8F00',metro:'#8B52A0','metro-red':'#D32F2F','metro-blue':'#1565C0',train:'#2E7D32'};
+function lineOpts(t){
+  const c=LINE_COLORS[t]||'#999';
+  const dash=(t==='walk'||t==='train');
+  return{color:c,weight:t==='train'?4:3.5,opacity:.85,dashArray:dash?(t==='walk'?'6,10':'8,6'):null};
+}
+
+// ═══════════════════════════════════════════
+// MAP
+// ═══════════════════════════════════════════
+const map=L.map('map',{zoomControl:false}).setView([59.935,30.32],12);
+L.control.zoom({position:'topright'}).addTo(map);
+L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',{attribution:'© OpenStreetMap',maxZoom:18}).addTo(map);
+
+let routeGroup=L.layerGroup().addTo(map);
+let roofGroup=L.layerGroup().addTo(map);
+
+// Roofs
+function roofColor(c){return{free:'#2E7D32',paid:'#8B7340',exc:'#1565C0',prem:'#E65100'}[c]||'#E65100'}
+ROOFS.forEach(r=>{
+  const c=roofColor(r.cat);
+  const icon=L.divIcon({className:'',iconSize:[24,24],iconAnchor:[12,12],popupAnchor:[0,-14],
+    html:`<div style="width:24px;height:24px;display:flex;align-items:center;justify-content:center;border-radius:5px;background:#fff;border:2px solid ${c};font-size:11px;box-shadow:0 1px 6px rgba(0,0,0,.2);cursor:pointer;transform:rotate(45deg)"><span style="transform:rotate(-45deg)">🏙</span></div>`});
+  L.marker([r.lat,r.lng],{icon,zIndexOffset:-200}).bindPopup(
+    `<div class="pb" style="background:${c}">Крыша</div><div class="pt-title">${r.name}</div><div style="font-size:.72rem;color:#555">💰 ${r.price}</div>`,{maxWidth:220}
+  ).addTo(roofGroup);
+});
+
+// Map click
+map.on('click',function(e){
+  if(!mapPickMode)return;
+  const pt={id:'__custom__',name:`${e.latlng.lat.toFixed(4)}, ${e.latlng.lng.toFixed(4)}`,lat:e.latlng.lat,lng:e.latlng.lng};
+  if(mapPickMode==='start'){
+    startPt=pt;
+    document.getElementById('startSel').value='__custom__';
+    document.getElementById('startCustom').innerHTML='<em>▸ '+pt.name+'</em>';
+    document.getElementById('startCustom').classList.add('vis');
+  } else {
+    endPt=pt;
+    document.getElementById('endSel').value='__custom__';
+    document.getElementById('endCustom').innerHTML='<em>▸ '+pt.name+'</em>';
+    document.getElementById('endCustom').classList.add('vis');
+  }
+  exitMapPick();
+  rebuild();
+});
+
+function makeEndpointIcon(type){
+  const isStart=type==='start';
+  const bg=isStart?'var(--start-color)':'var(--end-color)';
+  const brd=isStart?'#2E7D32':'#C62828';
+  const lbl=isStart?'А':'Б';
+  return L.divIcon({className:'',iconSize:[30,30],iconAnchor:[15,15],popupAnchor:[0,-17],
+    html:`<div style="width:30px;height:30px;display:flex;align-items:center;justify-content:center;border-radius:50%;background:${bg};border:3px solid ${brd};font-family:'Nunito Sans',sans-serif;font-size:12px;font-weight:700;color:#fff;box-shadow:0 2px 10px rgba(0,0,0,.3)">${lbl}</div>`});
+}
+function makePoiIcon(poi,idx,selected){
+  const bg=poi.required?'#C6A55C':selected?'#1B2A4A':'#bbb';
+  const brd=poi.required?'#8B7340':selected?'#0F1A30':'#999';
+  const txt=selected||poi.required?'#fff':'#666';
+  const lbl=poi.required?'★':(idx+1);
+  const sz=poi.required?30:26;
+  return L.divIcon({className:'',iconSize:[sz,sz],iconAnchor:[sz/2,sz/2],popupAnchor:[0,-sz/2-2],
+    html:`<div style="width:${sz}px;height:${sz}px;display:flex;align-items:center;justify-content:center;border-radius:50%;background:${bg};border:3px solid ${brd};font-family:'Nunito Sans',sans-serif;font-size:${poi.required?12:10}px;font-weight:700;color:${txt};box-shadow:0 2px 8px rgba(0,0,0,.25);cursor:pointer">${lbl}</div>`});
+}
+
+function buildRoute(){
+  routeGroup.clearLayers();
+  const day=DAYS[curDay];
+  const selected=day.pois.filter(p=>p.on).sort((a,b)=>a.order-b.order);
+  const bounds=[];
+
+  // Chain: start → (transit to area) → POIs in order → (transit back) → end
+  const chain=[];
+  chain.push({lat:startPt.lat,lng:startPt.lng,type:'start'});
+  selected.forEach(p=>chain.push({lat:p.lat,lng:p.lng,type:'poi',poi:p}));
+  chain.push({lat:endPt.lat,lng:endPt.lng,type:'end'});
+
+  // Lines — simple: walk between consecutive; could be enhanced
+  for(let i=0;i<chain.length-1;i++){
+    const a=chain[i],b=chain[i+1];
+    // Heuristic: if distance > 10km → train line, >3km → metro, else walk
+    const d=dist(a.lat,a.lng,b.lat,b.lng);
+    let lt='walk';
+    if(d>10) lt='train';
+    else if(d>3) lt=curDay===1?'metro':'metro-red';
+    else if(d>1.5) lt=curDay===1?'metro':'metro';
+    const line=L.polyline([[a.lat,a.lng],[b.lat,b.lng]],lineOpts(lt));
+    routeGroup.addLayer(line);
+    bounds.push([a.lat,a.lng],[b.lat,b.lng]);
+  }
+
+  // Markers: start
+  const sm=L.marker([startPt.lat,startPt.lng],{icon:makeEndpointIcon('start'),zIndexOffset:200});
+  sm.bindPopup(`<div class="pb" style="background:#43A047">Старт</div><div class="pt-title">${startPt.name}</div>`);
+  routeGroup.addLayer(sm);
+
+  // Markers: end
+  const em=L.marker([endPt.lat,endPt.lng],{icon:makeEndpointIcon('end'),zIndexOffset:200});
+  em.bindPopup(`<div class="pb" style="background:#E53935">Финиш</div><div class="pt-title">${endPt.name}</div>`);
+  routeGroup.addLayer(em);
+
+  // POI markers (all, styled by on/off)
+  day.pois.forEach((p,i)=>{
+    const icon=makePoiIcon(p,i,p.on);
+    const popup=`<div class="pb" style="background:${p.on?'#1B2A4A':'#999'}">${p.water?'🌊 У воды':'📍 Осмотр'}</div>
+      <div class="pt-title">${p.name}</div><div style="font-size:.73rem;color:#555">${p.desc}</div>
+      <div style="font-size:.7rem;font-weight:600;color:#8B7340;margin-top:3px">⏱ ${p.time}</div>`;
+    const m=L.marker([p.lat,p.lng],{icon,zIndexOffset:p.on?50:-50,opacity:p.on?1:.35});
+    m.bindPopup(popup,{maxWidth:250});
+    routeGroup.addLayer(m);
+  });
+
+  if(bounds.length) map.fitBounds(bounds,{padding:[50,50],maxZoom:14});
+}
+
+function dist(lat1,lng1,lat2,lng2){
+  const R=6371,dLat=(lat2-lat1)*Math.PI/180,dLng=(lng2-lng1)*Math.PI/180;
+  const a=Math.sin(dLat/2)**2+Math.cos(lat1*Math.PI/180)*Math.cos(lat2*Math.PI/180)*Math.sin(dLng/2)**2;
+  return R*2*Math.atan2(Math.sqrt(a),Math.sqrt(1-a));
+}
+
+// ═══════════════════════════════════════════
+// SIDEBAR
+// ═══════════════════════════════════════════
+function render(){
+  const day=DAYS[curDay];
+  const selected=day.pois.filter(p=>p.on);
+
+  document.getElementById('stats').innerHTML=`
+    <div><div class="v">${selected.length}</div><div class="l">мест выбрано</div></div>
+    <div><div class="v">А → Б</div><div class="l">${startPt.name===endPt.name?'кольцевой':'разные точки'}</div></div>
+    <div><div class="v">${curDay===0?'🚃':'🚶'}</div><div class="l">${curDay===0?'электричка':'пешком'}</div></div>`;
+
+  let h='<div class="sec-label">Выбери места для посещения</div><div class="scroll">';
+  day.pois.forEach((p,i)=>{
+    const cls=`poi ${p.on?'on':'off'} ${p.required?'required':''}`;
+    h+=`<div class="${cls}" onclick="togglePoi(${i})">
+      <div class="tog"></div>
+      <div class="poi-i">
+        <div class="pn">${p.name}</div>
+        <div class="pd">${p.desc}</div>
+        <div class="poi-tags">
+          ${p.water?'<span class="tag water">🌊 У воды</span>':''}
+          <span class="tag time">⏱ ${p.time}</span>
+          ${p.required?'<span class="tag req">★ Обязательно</span>':''}
+        </div>
+      </div>
+    </div>`;
+  });
+  h+='</div>';
+
+  const legs=curDay===0
+    ?[['walk','Пешком'],['metro','Метро'],['train','Электричка']]
+    :[['walk','Пешком'],['metro','Метро']];
+  h+='<div class="legend">';
+  legs.forEach(([k,v])=>{
+    const s=k==='walk'?'background:repeating-linear-gradient(90deg,#FF8F00 0 3px,transparent 3px 6px)'
+      :k==='train'?'background:repeating-linear-gradient(90deg,#2E7D32 0 4px,transparent 4px 7px)'
+      :`background:${LINE_COLORS[k]}`;
+    h+=`<div class="leg"><div class="lsw" style="${s}"></div>${v}</div>`;
+  });
+  h+='<div class="leg"><div class="lsw" style="width:8px;height:8px;border-radius:50%;background:#43A047"></div>Старт</div>';
+  h+='<div class="leg"><div class="lsw" style="width:8px;height:8px;border-radius:50%;background:#E53935"></div>Финиш</div>';
+  h+='<div class="leg"><div class="lsw" style="background:#E65100;border-radius:2px"></div>Крыши</div>';
+  h+='</div>';
+
+  document.getElementById('panel').innerHTML=h;
+}
+
+function togglePoi(idx){
+  const p=DAYS[curDay].pois[idx];
+  if(p.required)return;
+  p.on=!p.on;
+  rebuild();
+}
+
+function rebuild(){render();buildRoute();}
+
+function switchDay(d){
+  curDay=d;
+  document.querySelectorAll('.sel button').forEach((b,i)=>b.classList.toggle('on',i===d));
+  rebuild();
+}
+
+// INIT
+fillSelects();
+rebuild();
+</script>
+</body>
+</html>
